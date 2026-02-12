@@ -1,0 +1,62 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments and local env files
+.venv/
+venv/
+env/
+.venv*/
+.env
+.env.*
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test and analysis caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Editors / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS / misc
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tmp
+*.cache
+
+# LaTeX auxiliary files
+*.aux
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.toc
+*.out
+*.lof
+*.lot
+*.bbl
+*.blg
+
+# Project-specific generated/output directories
+Trash/
+Data/2025-10-22_17-44-15_Steißlingen_AeroValidation_Kibele/
+Outputs/01_Data_Preparation/Aero_Validation_Signals_cleaned_10ms.csv
+Outputs/01_Data_Preparation/Signals/
