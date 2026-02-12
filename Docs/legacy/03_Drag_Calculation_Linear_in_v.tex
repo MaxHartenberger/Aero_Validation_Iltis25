@@ -1,0 +1,150 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{siunitx}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\geometry{margin=2.5cm}
+
+\title{03\_Drag\_Calculation (Linear-in-\(v\) Diagnostic): Approaches 4--6}
+\author{Validation\_Aero\_Test}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Purpose and status}
+This document reports the results of the \emph{linear-in-\(v\)} model variants implemented in
+\texttt{Code/03\_Drag\_Calculation/Approach4\_PerRun\_Linear},
+\texttt{Approach5\_PairedOpposites\_Linear}, and
+\texttt{Approach6\_PooledByConfig\_Linear}.
+
+These approaches are kept as a diagnostic/experimental extension.
+For the current dataset and interval selection, they can yield non-physical results (notably negative \(C_dA\) in multiple configurations), so they are \textbf{not recommended} for reporting the final aerodynamic coefficients.
+
+\section{Model}
+With positive deceleration defined as \(a_\mathrm{dec}=-\dot v\), the linear-in-\(v\) model fits
+\[
+  a_\mathrm{dec}(v) = k_2 v^2 + k_1 v + c.
+\]
+The coefficients map to reported quantities via
+\[
+  C_dA = \frac{2 m k_2}{\rho}, \qquad C_r = \frac{c}{g}.
+\]
+
+\section{Why the linear-in-\(v\) term is not sensible here}
+The extended model introduces an extra degree of freedom (\(k_1\)). In principle it can represent speed-proportional losses; in practice, for typical coastdown segments in this dataset it creates an \emph{identifiability problem}:
+\begin{itemize}
+  \item \textbf{Collinearity over short speed ranges:} within a limited \(v\) window, \(v\) and \(v^2\) are strongly correlated, so the fit cannot robustly distinguish \(k_1\) from \(k_2\).
+  \item \textbf{Bias absorption:} unmodeled effects (residual grade, wind, sensor bias, filtering artefacts) can be absorbed by the extra term rather than improving the physical estimate of \(k_2\).
+  \item \textbf{Non-physical \(k_2\) (negative \(C_dA\)):} when the regression reallocates curvature to the linear term, the estimated \(k_2\) can become negative, which implies negative aerodynamic drag area.
+\end{itemize}
+
+The presence of negative \(C_dA\) across several configurations in Approaches 4--6 is therefore treated as evidence that the linear-in-\(v\) extension is not reliably constrained by the current data and preprocessing choices.
+
+\section{Implemented approaches (with example plots)}
+Approaches 4--6 mirror Approaches 1--3, but use the extended model.
+
+\subsection{Approach 4: Per-run (linear-in-\(v\))}
+\texttt{Code/03\_Drag\_Calculation/Approach4\_PerRun\_Linear/run.py}
+\begin{itemize}
+  \item Fit \(a_\mathrm{dec}=k_2 v^2 + k_1 v + c\) per extracted interval.
+  \item Convert \(k_2,c\) to \(C_dA\) and \(C_r\), then summarize per configuration.
+\end{itemize}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{../Outputs/03_Drag_Calculation/Approach4_PerRun_Linear/plots/coastdown_run_001.png}
+  \caption{Approach 4: example per-run coastdown fit plot (Run~001) with linear-in-\(v\) term.}
+\end{figure}
+
+\subsection{Approach 5: Paired opposites (linear-in-\(v\))}
+\texttt{Code/03\_Drag\_Calculation/Approach5\_PairedOpposites\_Linear/run.py}
+\begin{itemize}
+  \item Fit per run (as in Approach 4).
+  \item Pair consecutive run IDs \((i,i{+}1)\) and average coefficients within each configuration.
+\end{itemize}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.95\linewidth]{../Outputs/03_Drag_Calculation/Approach5_PairedOpposites_Linear/plots/CdA_per_pair_by_config.png}
+  \caption{Approach 5: \(C_dA\) per paired runs, grouped by configuration (linear-in-\(v\) variant).}
+\end{figure}
+
+\subsection{Approach 6: Pooled by configuration (linear-in-\(v\))}
+\texttt{Code/03\_Drag\_Calculation/Approach6\_PooledByConfig\_Linear/run.py}
+\begin{itemize}
+  \item Stack all samples belonging to a configuration.
+  \item Fit one \((k_2,k_1,c)\) per configuration using robust regression.
+\end{itemize}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.85\linewidth]{../Outputs/03_Drag_Calculation/Approach6_PooledByConfig_Linear/plots/CdA_bar_by_config_pooled.png}
+  \caption{Approach 6: pooled \(C_dA\) per configuration (linear-in-\(v\) variant).}
+\end{figure}
+
+\section{Results (current Outputs/)}
+\subsection{Uncertainty definition used in this report}
+The overview tables below report a ``measurement uncertainty'' per configuration:
+\begin{itemize}
+  \item Approach 4: standard deviation across runs (\texttt{CdA\_m2\_std}, \texttt{Cr\_std} from \texttt{drag\_config\_summary.csv}).
+  \item Approach 5: standard deviation across paired runs.
+  \item Approach 6: bootstrap standard deviation of the mean across runs (computed from Approach~4 per-run results and saved as \texttt{Outputs/03\_Drag\_Calculation/bootstrap\_pooled\_uncertainty.csv}).
+\end{itemize}
+
+\subsection{Overview: \(C_dA\)}
+\begin{table}[h]
+  \centering
+  \small
+  \caption{Linear-in-\(v\) model: \(C_dA\) per configuration across Approaches 4--6 (mean/pooled value $\pm$ uncertainty).}
+  \label{tab:linear-cda}
+  \begin{tabular}{lccc}
+    \toprule
+    Config & A4 (per-run) & A5 (paired) & A6 (pooled) \\
+    \midrule
+    \texttt{full} & $-0.690 \pm 0.716$ & $-0.690 \pm 0.410$ & $0.473 \pm 0.200$ \\
+    \texttt{no\_rear} & $-0.804 \pm 0.487$ & $-0.804 \pm 0.263$ & $-0.024 \pm 0.136$ \\
+    \texttt{no\_front\_rear} & $-0.906 \pm 0.569$ & $-0.906 \pm 0.333$ & $-0.179 \pm 0.161$ \\
+    \texttt{no\_front} & $-0.399 \pm 0.176$ & $-0.399 \pm 0.114$ & $0.252 \pm 0.055$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Overview: \(C_r\)}
+\begin{table}[h]
+  \centering
+  \small
+  \caption{Linear-in-\(v\) model: \(C_r\) per configuration across Approaches 4--6 (mean/pooled value $\pm$ uncertainty).}
+  \label{tab:linear-cr}
+  \begin{tabular}{lccc}
+    \toprule
+    Config & A4 (per-run) & A5 (paired) & A6 (pooled) \\
+    \midrule
+    \texttt{full} & $-0.0153 \pm 0.0277$ & $-0.0153 \pm 0.0134$ & $0.0178 \pm 0.0079$ \\
+    \texttt{no\_rear} & $-0.0166 \pm 0.0177$ & $-0.0166 \pm 0.0100$ & $0.0070 \pm 0.0051$ \\
+    \texttt{no\_front\_rear} & $-0.0133 \pm 0.0153$ & $-0.0133 \pm 0.0079$ & $0.0035 \pm 0.0043$ \\
+    \texttt{no\_front} & $-0.0008 \pm 0.0050$ & $-0.0008 \pm 0.0029$ & $0.0113 \pm 0.0015$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Reproducibility (example commands)}
+\begin{verbatim}
+# Step 2 prerequisites:
+# - drag intervals: Outputs/02_Run_Extraction/csv/drag_intervals.csv
+# - per-run CSVs:   Outputs/02_Run_Extraction/csv/run_XXX.csv
+
+python Code/03_Drag_Calculation/Approach4_PerRun_Linear/run.py
+python Code/03_Drag_Calculation/Approach5_PairedOpposites_Linear/run.py
+python Code/03_Drag_Calculation/Approach6_PooledByConfig_Linear/run.py
+
+# Optional: regenerate bootstrap uncertainty for pooled reporting
+python Code/03_Drag_Calculation/bootstrap_pooled_uncertainty_from_runs.py
+\end{verbatim}
+
+\end{document}

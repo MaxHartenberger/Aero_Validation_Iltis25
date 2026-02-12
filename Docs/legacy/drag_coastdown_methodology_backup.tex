@@ -1,0 +1,294 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{siunitx}
+\usepackage{booktabs}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\geometry{margin=2.5cm}
+\title{Coastdown-Based Estimation of Aerodynamic Drag (CdA) and Rolling Resistance (Cr)}
+\author{Validation\_Aero\_Test}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Overview}
+This document describes how we estimate the aerodynamic drag area (CdA) and rolling resistance coefficient (Cr) of a Formula Student vehicle from straight-line coastdown runs already extracted into per-run CSV files in \texttt{Outputs/02\_Run\_Extraction/csv/}. The method regresses the measured longitudinal deceleration against the square of speed over selected drag intervals, converting the fitted parameters into CdA and Cr.
+
+\section{Data and Signals}
+\paragraph{Input Files}
+\begin{itemize}
+  \item Per-run time series: \texttt{Outputs/02\_Run\_Extraction/csv/run\_XXX.csv} (e.g., \texttt{Outputs/02\_Run\_Extraction/csv/run\_001.csv})
+  \item Drag intervals: \texttt{Outputs/02\_Run\_Extraction/csv/drag\_intervals.csv} (columns include \texttt{run\_id}, \texttt{t0\_s}, \texttt{t1\_s})
+\end{itemize}
+
+\paragraph{Signals Used}
+From each run CSV we use:
+\begin{itemize}
+  \item \textbf{Speed}: \texttt{GPS1\_VEL\_MAG\_ms} [\si{\meter\per\second}]
+  \item \textbf{Longitudinal acceleration}: \texttt{IMU\_ACCEL\_LONG\_ms2} [\si{\meter\per\second\squared}]
+  \item \textbf{Optional filters}: \texttt{ICU\_Apps\_pct} [\%], \texttt{ICU\_Brakpresf\_bar}, \texttt{ICU\_Brakpresr\_bar}
+\end{itemize}
+
+\section{Longitudinal Acceleration Signal Construction}
+The coastdown analysis relies on a physically meaningful longitudinal acceleration signal \texttt{IMU\_ACCEL\_LONG\_ms2} rather than a raw IMU axis. This signal is constructed in \texttt{aero\_validation/signals.py} as follows:
+\begin{enumerate}
+  \item \textbf{Bias estimation from standstill.} Using GPS speed (\texttt{GPS1\_VEL\_MAG\_ms}) and wheel speed (\texttt{WHEEL\_SPEED\_kmh}), we identify samples where the car is effectively stationary ($v < \SI{0.05}{m/s}$). On these segments we take the median of each raw accelerometer axis (\texttt{IMU\_ACCEL\_X/Y/Z\_ms2}) as a stationary bias and subtract it, yielding bias-corrected axes $a_{x,\text{cal}}, a_{y,\text{cal}}, a_{z,\text{cal}}$.
+  \item \textbf{Reference longitudinal acceleration from speed.} From the best available speed signal (GPS or wheel-based), we form a smoothed magnitude $v_s(t)$ and compute a reference longitudinal acceleration $a_\text{ref}(t) = \mathrm{d}v_s/\mathrm{d}t$ by numerical differentiation. This provides an external estimate of true forward acceleration/deceleration.
+  \item \textbf{Straight-line calibration using steering.} To avoid cornering effects, only samples with small steering angle (\texttt{ICU\_SteeringAngle\_deg} within \(\pm 5^\circ\)) and sufficient speed ($v_s > \SI{0.5}{m/s}$) are used. On these ``straight and moving'' segments we assume that $a_\text{ref}$ is aligned with the vehicle's longitudinal direction.
+  \item \textbf{Least-squares projection of IMU onto longitudinal axis.} On the valid samples we solve a linear least-squares problem
+  \begin{equation}
+    w_x\,a_{x,\text{cal}}(t) + w_y\,a_{y,\text{cal}}(t) + w_z\,a_{z,\text{cal}}(t) \approx a_\text{ref}(t),
+  \end{equation}
+  obtaining weights $w = (w_x, w_y, w_z)$ that best align the IMU axes with the speed-derived longitudinal acceleration. If insufficient valid samples are available, a fallback of $w = (1, 0, 0)$ is used (pure X-axis).
+  \item \textbf{Application to the full run.} The longitudinal acceleration used for coastdown is then
+  \begin{equation}
+    a_\text{long}(t) = w_x\,a_{x,\text{cal}}(t) + w_y\,a_{y,\text{cal}}(t) + w_z\,a_{z,\text{cal}}(t),
+  \end{equation}
+  stored as \texttt{IMU\_ACCEL\_LONG\_ms2}. This combines bias removal, steering-based straight-line selection, and IMU axis alignment into a single robust signal that closely matches $\mathrm{d}v/\mathrm{d}t$ along the vehicle's path.
+\end{enumerate}
+
+\section{Preprocessing and Filtering}
+For each interval [\(t_0, t_1\)] in \texttt{drag\_intervals.csv} for a given run, we:
+\begin{enumerate}
+  \item Slice the run to \(t\in[t_0,t_1]\).
+  \item Enforce coastdown conditions if available: throttle \(\leq\SI{1}{\%}\), front/rear brake pressure \(\leq\SI{0.1}{bar}\).
+  \item Require \(v\geq\SI{5}{\meter\per\second}\) to reduce low-speed noise.
+  \item Define positive deceleration as \(a_\text{dec}(t) = -\,a_\text{long}(t)\).
+  \item Lightly smooth \(a_\text{dec}\) with a centered rolling median (window 7 samples).
+\end{enumerate}
+
+\section{End-to-End Procedure}
+The full workflow from raw signals to configuration summaries is as follows:
+\begin{enumerate}
+  \item \textbf{Interval definition.} Review each coastdown pass manually, logging usable portions into \texttt{Outputs/02\_Run\_Extraction/csv/drag\_intervals.csv}. The file stores run IDs, start/stop timestamps, and the aero configuration metadata that downstream scripts expect.
+  \item \textbf{Slice and clean signals.} For every interval, \texttt{Code/03\_Drag\_Calculation/calc\_drag\_coefficient.py} loads the corresponding \texttt{Outputs/02\_Run\_Extraction/csv/run\_XXX.csv} file, enforces the throttle/brake gates listed above, discards samples below the \SI{5}{m/s} threshold, and constructs $(v^2, a_\text{dec})$ pairs after the rolling-median smoothing. This produces evenly spaced, denoised samples while retaining transients such as brake light spikes for diagnostic plots.
+  \item \textbf{Robust regression.} The script fits \(a_\text{dec} = k v^2 + c\) with iterative $2\sigma$ clipping. Each fit reports $k$, $c$, $R^2$, the number of retained points, and qualitative flags so outlier runs can be revisited quickly.
+  \item \textbf{Convert to CdA/Cd/Cr.} With the chosen mass $m$ and density $\rho$ (defaults in Section~\ref{sec:settings}), the slope/intercept are mapped to \(C_dA\), \(C_d\), and \(C_r\). Optional drag-force columns evaluate $F_d$ at reference speeds for sanity checks.
+  \item \textbf{Pair opposite runs.} Supplying \texttt{--pair-opposites} averages consecutive run IDs inside the same configuration to cancel wind/grade biases (Section~\ref{sec:pairing}). The script writes both the raw per-run table (\texttt{Outputs/03\_Drag\_Calculation/csv/drag\_coefficients.csv}) and the paired table (\texttt{Outputs/03\_Drag\_Calculation/csv/drag\_coefficients\_paired.csv}).
+  \item \textbf{Summarize by configuration.} \texttt{Code/03\_Drag\_Calculation/summarize\_drag\_configs.py} groups the paired coefficients by configuration, computing means, dispersions, and wing deltas (tables in Section~\ref{sec:results}).
+  \item \textbf{Optional pooled fit.} When we want a single regression using every inlier sample per configuration, \texttt{Code/03\_Drag\_Calculation/calc\_drag\_coefficients\_by\_config.py} stacks all $(v^2, a_\text{dec})$ points before fitting. This sacrifices run-level visibility but increases sample size, serving as a cross-check on the averaged results.
+\end{enumerate}
+
+
+\section{Dynamics Model}
+Neglecting grade and wind, the longitudinal dynamics during coastdown can be approximated by
+\begin{equation}
+  m\,\dot v \,=\, -\tfrac{1}{2}\,\rho\,C_dA\,v^2\; -\; C_r\,m\,g \quad \Rightarrow \quad a(v) = \dot v = -\,k\,v^2 - c,
+\end{equation}
+with
+\begin{equation}
+  k = \frac{\rho\,C_dA}{2m}, \qquad c = C_r\,g.
+\end{equation}
+We therefore fit
+\begin{equation}
+  a_\text{dec}(v) \;=\; k\,v^2 + c,
+\end{equation}
+so that \(k\) is the slope versus \(v^2\) and \(c\) is the intercept.
+
+\paragraph{Parameter Conversion}
+Given mass \(m\) and air density \(\rho\), we compute
+\begin{align}
+  C_dA &= \frac{2 m k}{\rho}, & C_r &= \frac{c}{g}.
+\end{align}
+
+\section{Opposite-Direction Pairing for Wind/Grade Cancellation\label{sec:pairing}}
+Each configuration was executed as alternating out-and-back passes---run $(2n{-}1)$ and run $(2n)$ were driven on the same straight but in opposite directions. We therefore average the fitted parameters of consecutive run IDs within a configuration to cancel steady wind and road grade effects:
+\begin{align}
+  a_{\text{fwd}}(v) &= k v^2 + c + g\sin\theta + a_\text{wind}, \\
+  a_{\text{rev}}(v) &= k v^2 + c - g\sin\theta - a_\text{wind},
+\end{align}
+so the mean
+\begin{equation}
+  \bar a(v) = \tfrac{1}{2}\bigl(a_{\text{fwd}}(v) + a_{\text{rev}}(v)\bigr) = k v^2 + c
+\end{equation}
+shares the aerodynamic slope while removing the grade/wind intercept bias. The script writes these paired, grade-compensated coefficients to \texttt{Outputs/03\_Drag\_Calculation/csv/drag\_coefficients\_paired.csv} for downstream analysis.
+
+\section{Drag Coefficient and Drag Force}
+With frontal area \(A\), the drag coefficient is \(C_d = \tfrac{C_dA}{A}\). The aerodynamic drag force is
+\begin{equation}
+  F_d(v) = \tfrac{1}{2}\,\rho\,C_dA\,v^2 = \tfrac{1}{2}\,\rho\,C_d\,A\,v^2.
+\end{equation}
+For the test settings \(m=\SI{250}{kg},\;\rho=\SI{1.225}{kg/m^3},\;A=\SI{1.20}{m^2}\), the overall (all runs) summary is:
+\begin{itemize}
+  \item \(C_dA\) mean: \(0.6407\,\si{m^2}\); \(C_d\) mean: \(0.5339\).
+  \item Mean drag forces: \(F_d(10\,\si{m/s})\approx\SI{39.2}{N}\), \(F_d(15\,\si{m/s})\approx\SI{88.3}{N}\), \(F_d(20\,\si{m/s})\approx\SI{157.0}{N}\).
+\end{itemize}
+
+\section{Estimation Procedure}
+We regress \(a_\text{dec}\) against \(v^2\) using robust linear fitting with simple sigma-clipping:
+\begin{enumerate}
+  \item Ordinary least squares to get initial slope/intercept.
+  \item Compute residuals; iteratively remove points with \(|r|>2\sigma\) (up to 5 iterations).
+  \item Refit on inliers; report \(R^2\) and the number of points used.
+\end{enumerate}
+This procedure is implemented in \texttt{Code/03\_Drag\_Calculation/calc\_drag\_coefficient.py}.
+
+\section{Run Grouping by Aero Configuration}
+User-provided mapping of run IDs to configurations:
+\begin{itemize}
+  \item Full aero: runs 1--12.
+  \item No rear wing (front only): runs 13--24.
+  \item No wings (no front, no rear): runs 25--36.
+  \item No front wing (rear only): runs 37--46.
+\end{itemize}
+Aggregation and wing contributions are computed by \texttt{Code/03\_Drag\_Calculation/summarize\_drag\_configs.py}.
+
+\section{Settings Used\label{sec:settings}}
+Unless noted otherwise:
+\begin{itemize}
+  \item Vehicle mass: \(m=\SI{250}{kg}\)
+  \item Air density: \(\rho=\SI{1.225}{kg/m^3}\)
+  \item Gravity: \(g=\SI{9.80665}{m/s^2}\)
+  \item Minimum speed: \(\SI{5}{m/s}\)
+  \item Brake threshold: \(\leq\SI{0.1}{bar}\); throttle \(\leq\SI{1}{\%}\) if available
+  \item Smoothing: rolling median window size 7 (centered)
+\end{itemize}
+
+\section{Results\label{sec:results}}
+Per-configuration sample means, standard deviations (std), variances (var), and run counts (N):
+\begin{table}[h]
+  \centering
+  \sisetup{round-mode=places,round-precision=4}
+  \begin{tabular}{l S[table-format=1.4] S[table-format=1.4] S[table-format=1.6] c S[table-format=1.4] S[table-format=1.4] S[table-format=1.6]}
+    \toprule
+    {Config} & {CdA mean} & {CdA std} & {CdA var} & {$N$} & {Cr mean} & {Cr std} & {Cr var} \\
+    \midrule
+    Full aero        & 0.7514 & 0.0812 & 0.006596 & 12 & 0.0296 & 0.0057 & 0.000033 \\
+    No front wing    & 0.6944 & 0.0650 & 0.004221 & 10 & 0.0272 & 0.0039 & 0.000015 \\
+    No wings         & 0.5518 & 0.0942 & 0.008878 & 12 & 0.0255 & 0.0042 & 0.000017 \\
+    No rear wing     & 0.5741 & 0.0357 & 0.001275 & 12 & 0.0272 & 0.0043 & 0.000018 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Per-configuration statistics (sample std/var).}
+\end{table}
+
+Wing drag contributions relative to the baseline (no wings):
+\begin{table}[h]
+  \centering
+  \begin{tabular}{l S[table-format=1.4]}
+    \toprule
+    {Component} & {\(\Delta C_dA\) [m$^2$]} \\
+    \midrule
+    Front wing  & 0.0223 \\
+    Rear wing   & 0.1426 \\
+    Both wings  & 0.1996 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Wing drag increments vs. no-wings baseline.}
+\end{table}
+
+Overall (all runs, per-run fits): \(C_dA\) mean \(=0.6407\), std \(=0.1102\), var \(=0.01214\); \(C_r\) mean \(=0.02739\), std \(=0.00469\), var \(=2.20\times10^{-5}\) with \(N=46\).
+
+For the paired runs (opposite-direction averaging, Section~\ref{sec:pairing}), per-configuration sample statistics are:
+\begin{table}[h]
+  \centering
+  \sisetup{round-mode=places,round-precision=4}
+  \begin{tabular}{l S[table-format=1.4] S[table-format=1.4] S[table-format=1.6] c S[table-format=1.4] S[table-format=1.4] S[table-format=1.6]}
+    	oprule
+    {Config (paired)} & {CdA mean} & {CdA std} & {CdA var} & {$N_\text{pairs}$} & {Cr mean} & {Cr std} & {Cr var} \\
+    \midrule
+    Full aero        & 0.7514 & 0.0522 & 0.002724 & 6 & 0.0296 & 0.0021 & 0.000005 \\
+    No front wing    & 0.6944 & 0.0408 & 0.001665 & 5 & 0.0272 & 0.0017 & 0.000003 \\
+    No wings         & 0.5518 & 0.0513 & 0.002629 & 6 & 0.0255 & 0.0014 & 0.000002 \\
+    No rear wing     & 0.5741 & 0.0047 & 0.000022 & 6 & 0.0272 & 0.0012 & 0.000001 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Per-configuration statistics for paired (opposite-direction averaged) runs.}
+\end{table}
+
+Overall (all paired runs): \(C_dA\) mean \(=0.6407\), std \(=0.0943\), var \(=0.00889\); \(C_r\) mean \(=0.02739\), std \(=0.00214\), var \(=5.0\times10^{-6}\) with \(N=23\) pairs.
+
+\section{Configuration-Level Pooled Fits}
+Instead of averaging per-run coefficients, we can regress all inlier samples of a configuration at once. \texttt{Code/03\_Drag\_Calculation/calc\_drag\_coefficients\_by\_config.py} automates this experiment, reusing the same preprocessing logic as the per-run script but stacking every $(v^2, a_\text{dec})$ pair before fitting. The resulting coefficients are:
+\begin{table}[h]
+  \centering
+  \sisetup{round-mode=places,round-precision=4}
+  \begin{tabular}{l c S[table-format=2.0] S[table-format=1.4] S[table-format=1.4] S[table-format=1.4] S[table-format=1.3]}
+    	oprule
+    {Config} & {$N_\text{runs}$} & {Samples} & {CdA [m$^2$]} & {Cd} & {Cr} & {$R^2$} \\
+    \midrule
+    Full aero        & 12 & 8551  & 0.7609 & 0.6341 & 0.0286 & 0.617 \\
+    No rear wing     & 12 & 9539  & 0.5700 & 0.4750 & 0.0269 & 0.519 \\
+    No wings         & 12 & 10747 & 0.5529 & 0.4607 & 0.0250 & 0.473 \\
+    No front wing    & 10 & 7915  & 0.7642 & 0.6368 & 0.0244 & 0.642 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Single pooled regression per configuration.}
+\end{table}
+
+The pooled CdA values closely match the paired-run means, confirming that averaging run-level fits is not introducing bias. However, pooled fits hide problematic runs (a single bad interval only nudges the global slope slightly), so we treat them as a validation cross-check rather than a replacement for the per-run workflow.
+
+\section{Discussion and Modeling Choices}
+\paragraph{Including Drivetrain Friction} A viscous drivetrain loss can be incorporated via a linear-in-speed term, fitting
+\begin{equation}
+  a_\text{dec}(v) = k_2 v^2 + k_1 v + c,
+\end{equation}
+where \(k_2\) maps to \(C_dA\) as before, \(c\) maps to \(C_r\,g\), and \(k_1\) captures drivetrain friction proportional to speed. Because \(v\) and \(v^2\) are correlated over typical coastdown segments, care is needed: we recommend the \(v^2\)-only baseline for aerodynamic estimation, optionally enabling the \(v\)-term with centered \(v\) and constraints (e.g., \(k_2\ge 0\)) when quantifying drivetrain effects.
+\paragraph{Why regress $a$ vs $v^2$?} In coastdown, aerodynamic drag scales with $v^2$, making a linear model in $v^2$ natural and well-conditioned. The intercept captures speed-independent rolling resistance.
+
+\paragraph{Robustness to Outliers} IMU and GPS-derived signals can contain spikes. Sigma-clipped fitting attenuates their influence without requiring a heavy parametric noise model.
+
+\paragraph{Effect of Downforce} Aero downforce increases normal load, which can increase rolling resistance. If downforce changes significantly with speed, some of this effect may bleed into the $v^2$ slope. The configuration comparison (full/no-wings/etc.) partially isolates component contributions.
+
+\paragraph{Unmodeled Disturbances} Small grades and wind are not explicitly modeled inside each single run; they contribute to variance. Pairing opposite-direction passes (Section~\ref{sec:pairing}) greatly reduces this bias, and if a reliable grade estimate becomes available, the model can further include an explicit $+g\sin(\theta)$ term.
+
+\section{Reproducibility}
+Commands used to generate the results in this document:
+\begin{verbatim}
+# Compute per-run coefficients (CdA, Cr) for all intervals
+python Code/03_Drag_Calculation/calc_drag_coefficient.py \
+  --mass-kg 250 --rho 1.225 --min-v-ms 5.0 \
+  --intervals Outputs/02_Run_Extraction/csv/drag_intervals.csv \
+  --out Outputs/03_Drag_Calculation/csv/drag_coefficients.csv
+
+# Average opposite-direction runs to cancel wind/grade biases
+python Code/03_Drag_Calculation/calc_drag_coefficient.py \
+  --mass-kg 250 --rho 1.225 --min-v-ms 5.0 \
+  --intervals Outputs/02_Run_Extraction/csv/drag_intervals.csv \
+  --out Outputs/03_Drag_Calculation/csv/drag_coefficients.csv \
+  --pair-opposites --paired-out Outputs/03_Drag_Calculation/csv/drag_coefficients_paired.csv
+
+# Summarize by configuration and compute wing contributions
+python Code/03_Drag_Calculation/summarize_drag_configs.py \
+  --input Outputs/03_Drag_Calculation/csv/drag_coefficients.csv \
+  --out Outputs/03_Drag_Calculation/csv/drag_config_summary.csv
+
+# Optional pooled fit per configuration
+python Code/03_Drag_Calculation/calc_drag_coefficients_by_config.py \
+  --mass-kg 250 --rho 1.225 --min-v-ms 5.0 \
+  --intervals Outputs/02_Run_Extraction/csv/drag_intervals.csv \
+  --out Outputs/03_Drag_Calculation/csv/drag_config_pooled_fits.csv
+\end{verbatim}
+
+\section{Limitations and Future Work}
+\begin{itemize}
+  \item Add grade compensation (from GPS altitude or IMU attitude) to reduce intercept bias (current opposite-run averaging removes most of it but does not provide explicit grade estimates).
+  \item Estimate and subtract wind components using dual-pass averaging or anemometer data for added redundancy beyond the existing paired-run cancellation.
+  \item Model speed-dependent rolling due to downforce explicitly to separate CdA and Cr more cleanly.
+  \item Provide per-run plots of $a$ vs $v^2$ with inliers and regression lines for quality control.
+\end{itemize}
+
+\section{Conclusion}
+The coastdown method provides consistent estimates across configurations, with clear drag increments from the rear and front wings. Variance across runs is within expected bounds given unmodeled wind/grade and sensor noise. The resulting CdA/Cr values can inform setup choices and serve as baselines for future validation sessions.
+
+\section{Figures}
+Representative coastdown fits (deceleration vs $v^2$) with inliers and regression line:
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.48\textwidth]{../Outputs/03_Drag_Calculation/plots/coastdown_run_001.png}\hfill
+  \includegraphics[width=0.48\textwidth]{../Outputs/03_Drag_Calculation/plots/coastdown_run_013.png}
+  \caption{Run 001 (full aero, left) and run 013 (no rear wing, right).}
+\end{figure}
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.48\textwidth]{../Outputs/03_Drag_Calculation/plots/coastdown_run_025.png}\hfill
+  \includegraphics[width=0.48\textwidth]{../Outputs/03_Drag_Calculation/plots/coastdown_run_037.png}
+  \caption{Run 025 (no wings, left) and run 037 (no front wing, right).}
+\end{figure}
+
+\end{document}

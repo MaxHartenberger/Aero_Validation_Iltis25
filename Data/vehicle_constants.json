@@ -1,0 +1,22 @@
+{
+  "vehicle": {
+    "mass_kg": 280.0,
+    "rho_kgm3": 1.225,
+    "frontal_area_m2_by_config": {
+      "full": 1.20,
+      "no_rear": 1.20,
+      "no_front_rear": 1.20,
+      "no_front": 1.20
+    }
+  },
+  "analysis": {
+    "fd_speeds_ms": [10.0, 15.0, 20.0],
+    "baseline_config": "no_front_rear",
+    "config_ranges_by_run_id": {
+      "full": [1, 12],
+      "no_rear": [13, 24],
+      "no_front_rear": [25, 36],
+      "no_front": [37, 46]
+    }
+  }
+}
