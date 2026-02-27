@@ -51,7 +51,7 @@ python Code/03_Drag_Calculation/Approach1_PerRun/run.py
 # Optional alternatives:
 # - Approach2_PairedOpposites/run.py (pair consecutive opposite-direction runs)
 # - Approach3_PooledByConfig/run.py (pooled regression per configuration)
-# - Approach4/5/6 *_Linear/run.py (include linear-in-v term)
+# - Approach4/5/6 *_Linear/run.py (include linear-in-v term - not working)
 ```
 
 ## Data & outputs
