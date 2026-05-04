@@ -130,10 +130,7 @@ per_run_plots_dir = global_plots_dir
 
 v = df["GPS1_VEL_MAG_ms"].to_numpy()
 steer = df["ICU_SteeringAngle_deg"].to_numpy() if "ICU_SteeringAngle_deg" in df.columns else None
-brake_f = df["ICU_Brakpresf_bar"].to_numpy() if "ICU_Brakpresf_bar" in df.columns else None
-brake_r = df["ICU_Brakpresr_bar"].to_numpy() if "ICU_Brakpresr_bar" in df.columns else None
 w_kmh = df["WHEEL_SPEED_kmh"].to_numpy() if "WHEEL_SPEED_kmh" in df.columns else None
-acc_long = df["IMU_ACCEL_LONG_ms2"].to_numpy() if "IMU_ACCEL_LONG_ms2" in df.columns else None
 
 """
 Hand-picked acceleration-related columns from Signals.
@@ -142,9 +139,6 @@ Extend the list here if more longitudinal/IMU acceleration signals are available
 """
 acc_defs = [
     ("IMU_ACCEL_LONG_ms2", "IMU_ACCEL_LONG_ms2", "IMU_ACCEL_LONG_ms2"),
-    ("IMU_ACCEL_X_ms2", "IMU_ACCEL_X_ms2", "SBG_IMU_ACCEL_X"),
-    ("IMU_ACCEL_Y_ms2", "IMU_ACCEL_Y_ms2", "SBG_IMU_ACCEL_Y"),
-    ("IMU_ACCEL_Z_ms2", "IMU_ACCEL_Z_ms2", "SBG_IMU_ACCEL_Z"),
 ]
 acc_series_all = []
 for label, df_col, file_base in acc_defs:
@@ -195,8 +189,8 @@ for (i0, i1), rid in zip(intervals, run_ids):
     t_seg = t[sl_pad]
     v_seg = v[sl_pad]
     steer_seg = steer[sl_pad] if steer is not None else None
-    brake_f_seg = brake_f[sl_pad] if brake_f is not None else None
-    brake_r_seg = brake_r[sl_pad] if brake_r is not None else None
+    brake_f_seg = None
+    brake_r_seg = None
     w_kmh_seg = w_kmh[sl_pad] if w_kmh is not None else None
     acc_series_seg = [(label, arr[sl_pad]) for (label, arr) in acc_series_all]
     plot_path = per_run_plots_dir / f"run_{rid:03d}_velocity_steering_brake.png"

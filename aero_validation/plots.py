@@ -58,9 +58,12 @@ def plot_run(
         seen.add("IMU_ACCEL_LONG_ms2")
 
     has_any_accel = len(series_list) > 0
-    nrows = 3 + (len(series_list) if has_any_accel else 0)
-    fig, axes = plt.subplots(nrows, 1, figsize=(10, 8 + 2 * (nrows - 3)), sharex=True)
-    ax1, ax2, ax3 = axes[0], axes[1], axes[2]
+    has_brake = (brake_f is not None) or (brake_r is not None)
+    base_rows = 2 + (1 if has_brake else 0)
+    nrows = base_rows + (len(series_list) if has_any_accel else 0)
+    fig, axes = plt.subplots(nrows, 1, figsize=(10, 6 + 2 * (nrows - 2)), sharex=True)
+    ax1, ax2 = axes[0], axes[1]
+    ax3 = axes[2] if has_brake else None
 
     ax1.plot(t, v, linewidth=1.2, label="GPS1_VEL_MAG [m/s]")
     if w_kmh is not None:
@@ -86,25 +89,21 @@ def plot_run(
     ax2.grid(True, alpha=0.3)
     ax2.margins(x=0)
 
-    has_brake = False
-    if brake_f is not None:
-        ax3.plot(t, brake_f, linewidth=1.0, color="tab:red", label="Brake Front [bar]")
-        has_brake = True
-    if brake_r is not None:
-        ax3.plot(t, brake_r, linewidth=1.0, color="tab:purple", label="Brake Rear [bar]")
-        has_brake = True
-    if has_brake:
+    if has_brake and ax3 is not None:
+        if brake_f is not None:
+            ax3.plot(t, brake_f, linewidth=1.0, color="tab:red", label="Brake Front [bar]")
+        if brake_r is not None:
+            ax3.plot(t, brake_r, linewidth=1.0, color="tab:purple", label="Brake Rear [bar]")
         ax3.legend()
-    else:
-        ax3.text(0.5, 0.5, "Brake pressure not available", ha="center", va="center", transform=ax3.transAxes)
-    ax3.set_ylabel("Brake [bar]")
-    ax3.grid(True, alpha=0.3)
-    ax3.margins(x=0)
+        ax3.set_ylabel("Brake [bar]")
+        ax3.grid(True, alpha=0.3)
+        ax3.margins(x=0)
 
+    accel_start = 3 if has_brake else 2
     if has_any_accel:
         color_cycle = ["tab:green", "tab:red", "tab:purple", "tab:brown", "tab:cyan", "tab:olive"]
         for idx, (label, arr) in enumerate(series_list):
-            ax_a = axes[3 + idx]
+            ax_a = axes[accel_start + idx]
             arr_f = np.asarray(arr, dtype=float)
             ax_a.plot(t, arr_f, linewidth=1.0, color=color_cycle[idx % len(color_cycle)], label=label)
             finite_mask = np.isfinite(arr_f)
@@ -118,7 +117,7 @@ def plot_run(
             ax_a.margins(x=0)
         axes[-1].set_xlabel("t [s]")
     else:
-        ax3.set_xlabel("t [s]")
+        (ax3 if has_brake and ax3 is not None else ax2).set_xlabel("t [s]")
 
     fig.tight_layout()
     fig.savefig(out_path, dpi=150)

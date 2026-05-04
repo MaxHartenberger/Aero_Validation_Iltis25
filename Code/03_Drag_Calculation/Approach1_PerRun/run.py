@@ -63,6 +63,16 @@ def _plot_summary(coeffs: pd.DataFrame, *, plots_dir: Path, config_order: list[s
     plt.savefig(plots_dir / "CdA_box_by_config.png", dpi=160)
     plt.close()
 
+    # Boxplot of Cr by configuration
+    plt.figure(figsize=(6, 4))
+    sns.boxplot(data=coeffs, x="config", y="Cr", order=order)
+    plt.xlabel("Configuration")
+    plt.ylabel("Cr [-]")
+    plt.title("Cr distribution by configuration")
+    plt.tight_layout()
+    plt.savefig(plots_dir / "Cr_box_by_config.png", dpi=160)
+    plt.close()
+
 
 def _plot_run_fit(run_id: int, sl: pd.DataFrame, *, k2: float, k1: float, c: float, plots_dir: Path) -> None:
     import matplotlib.pyplot as plt

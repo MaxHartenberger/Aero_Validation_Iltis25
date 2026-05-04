@@ -60,6 +60,16 @@ def _plot_paired_summary(pairs: pd.DataFrame, *, plots_dir: Path, config_order: 
     plt.savefig(plots_dir / "CdA_box_by_config_paired.png", dpi=160)
     plt.close()
 
+    # Boxplot of Cr by configuration
+    plt.figure(figsize=(6, 4))
+    sns.boxplot(data=pairs, x="config", y="Cr", order=order)
+    plt.xlabel("Configuration")
+    plt.ylabel("Cr [-]")
+    plt.title("Cr distribution by configuration (paired)")
+    plt.tight_layout()
+    plt.savefig(plots_dir / "Cr_box_by_config_paired.png", dpi=160)
+    plt.close()
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Approach 2: per-run regression then pair consecutive opposite-direction runs within configuration.")
