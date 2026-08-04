@@ -11,10 +11,17 @@ Implements three tasks:
 from pathlib import Path
 from typing import Optional
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 from .signals import smooth
+
+__all__ = [
+    "validate_accel_vs_velocity",
+    "validate_accel_vs_wheelspeed",
+    "validate_accel_longitudinal",
+]
 
 
 def validate_accel_vs_velocity(df: pd.DataFrame, out_dir: Path) -> None:
@@ -113,7 +120,6 @@ def validate_accel_vs_velocity(df: pd.DataFrame, out_dir: Path) -> None:
         )
     ]).to_csv(out_dir / "accel_velocity_consistency_metrics.csv", index=False)
 
-    import matplotlib.pyplot as plt
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), gridspec_kw={"hspace": 0.25})
     ax1.plot(t_m, dvdt_m, label="dV/dt [m/s²]", color="tab:blue", linewidth=1.2)
     ax1.plot(t_m, a_m, label="a_x IMU (cal) [m/s²]", color="tab:orange", linewidth=1.0, alpha=0.9)
@@ -227,7 +233,6 @@ def validate_accel_vs_wheelspeed(df: pd.DataFrame, out_dir: Path) -> None:
         )
     ]).to_csv(out_dir / "accel_wheelspeed_consistency_metrics.csv", index=False)
 
-    import matplotlib.pyplot as plt
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), gridspec_kw={"hspace": 0.25})
     ax1.plot(t_m, dvdt_m, label="dV/dt (wheel) [m/s²]", color="tab:blue", linewidth=1.2)
     ax1.plot(t_m, a_m, label="a_x IMU (cal) [m/s²]", color="tab:orange", linewidth=1.0, alpha=0.9)

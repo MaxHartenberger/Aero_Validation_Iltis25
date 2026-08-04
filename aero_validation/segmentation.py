@@ -6,10 +6,60 @@ Implements speed peak detection and straight-line drag-run segmentation with
 thresholds for steering, braking, re-acceleration, and stop conditions.
 """
 
+from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+
+__all__ = [
+    "DragRunConfig",
+    "segment_runs",
+    "detect_drag_peaks",
+    "segment_drag_runs",
+    "segment_drag_runs_with_debug",
+]
+
+
+@dataclass
+class DragRunConfig:
+    """Configuration for drag-run segmentation.
+
+    All fields have sensible defaults and can be overridden individually.
+    """
+    steer_thresh: float = 12.0
+    straight_ratio: float = 0.70
+    min_peak_speed: float = 1.0
+    peak_window_s: float = 0.5
+    peak_prominence: float = 0.1
+    reaccel_eps: float = 0.2
+    accel_window_s: float = 0.5
+    brake_thresh: float = 0.05
+    brake_spike_thresh: float = 0.1
+    turn_window_s: float = 0.2
+    min_dur_s: float = 2.0
+    max_dur_s: float = 10.0
+    stop_speed_th: float = 0.2
+    smooth: bool = True
+
+    def to_dict(self) -> dict:
+        """Convert to a plain dict for backward-compatible config passing."""
+        return {
+            "steer_thresh": self.steer_thresh,
+            "straight_ratio": self.straight_ratio,
+            "min_peak_speed": self.min_peak_speed,
+            "peak_window_s": self.peak_window_s,
+            "peak_prominence": self.peak_prominence,
+            "reaccel_eps": self.reaccel_eps,
+            "accel_window_s": self.accel_window_s,
+            "brake_thresh": self.brake_thresh,
+            "brake_spike_thresh": self.brake_spike_thresh,
+            "turn_window_s": self.turn_window_s,
+            "min_dur_s": self.min_dur_s,
+            "max_dur_s": self.max_dur_s,
+            "stop_speed_th": self.stop_speed_th,
+            "smooth": self.smooth,
+        }
 
 
 def segment_runs(t, v) -> List[Tuple[int, int]]:
@@ -135,7 +185,7 @@ def segment_drag_runs(
     steer,
     brake_f=None,
     brake_r=None,
-    config: Optional[dict] = None,
+    config: DragRunConfig | dict | None = None,
 ) -> List[Tuple[int, int]]:
     """Detect straight-line drag runs as half-open intervals.
 
@@ -150,28 +200,33 @@ def segment_drag_runs(
         steer: Steering angle vector in degrees or None.
         brake_f: Front brake pressure or None.
         brake_r: Rear brake pressure or None.
-        config: Optional dict of thresholds and options (see code for keys).
+        config: Optional :class:`DragRunConfig`, dict of thresholds, or None
+            to use defaults.
 
     Returns:
         List of `(start_idx, end_idx)` intervals, `end_idx` exclusive.
     """
     if config is None:
-        config = {}
+        cfg = DragRunConfig()
+    elif isinstance(config, DragRunConfig):
+        cfg = config
+    else:
+        cfg = DragRunConfig(**{k: v for k, v in config.items() if k in DragRunConfig.__dataclass_fields__})
 
-    smooth = bool(config.get("smooth", True))
-    steer_thresh = float(config.get("steer_thresh", 12.0))
-    straight_ratio = float(config.get("straight_ratio", 0.70))
-    min_peak_speed = float(config.get("min_peak_speed", 1.0))
-    peak_window_s = float(config.get("peak_window_s", 0.5))
-    peak_prominence = float(config.get("peak_prominence", 0.1))
-    accel_eps = float(config.get("reaccel_eps", 0.2))
-    accel_window_s = float(config.get("accel_window_s", 0.5))
-    brake_thresh = float(config.get("brake_thresh", 0.05))
-    brake_spike_thresh = float(config.get("brake_spike_thresh", 0.1))
-    turn_window_s = float(config.get("turn_window_s", 0.2))
-    min_dur_s = float(config.get("min_dur_s", 2.0))
-    max_dur_s = float(config.get("max_dur_s", 10.0))
-    stop_speed_th = float(config.get("stop_speed_th", 0.2))
+    smooth = cfg.smooth
+    steer_thresh = cfg.steer_thresh
+    straight_ratio = cfg.straight_ratio
+    min_peak_speed = cfg.min_peak_speed
+    peak_window_s = cfg.peak_window_s
+    peak_prominence = cfg.peak_prominence
+    accel_eps = cfg.reaccel_eps
+    accel_window_s = cfg.accel_window_s
+    brake_thresh = cfg.brake_thresh
+    brake_spike_thresh = cfg.brake_spike_thresh
+    turn_window_s = cfg.turn_window_s
+    min_dur_s = cfg.min_dur_s
+    max_dur_s = cfg.max_dur_s
+    stop_speed_th = cfg.stop_speed_th
 
     n = len(t)
     if n < 3:
@@ -262,7 +317,7 @@ def segment_drag_runs_with_debug(
     steer,
     brake_f=None,
     brake_r=None,
-    config: Optional[dict] = None,
+    config: DragRunConfig | dict | None = None,
 ) -> Tuple[List[Tuple[int, int]], List[dict]]:
     """Debug variant of `segment_drag_runs` returning intervals and decision log.
 
@@ -275,29 +330,33 @@ def segment_drag_runs_with_debug(
         steer: Steering angle vector or None.
         brake_f: Front brake pressure or None.
         brake_r: Rear brake pressure or None.
-        config: Optional thresholds and options dict.
+        config: Optional :class:`DragRunConfig`, dict, or None for defaults.
 
     Returns:
         Tuple of `(intervals, debug_rows)`; `debug_rows` is a list of dicts per
         peak candidate with fields like `accepted`, `reason`, `start_idx`, etc.
     """
     if config is None:
-        config = {}
+        cfg = DragRunConfig()
+    elif isinstance(config, DragRunConfig):
+        cfg = config
+    else:
+        cfg = DragRunConfig(**{k: v for k, v in config.items() if k in DragRunConfig.__dataclass_fields__})
 
-    smooth = bool(config.get("smooth", True))
-    steer_thresh = float(config.get("steer_thresh", 12.0))
-    straight_ratio_th = float(config.get("straight_ratio", 0.70))
-    min_peak_speed = float(config.get("min_peak_speed", 1.0))
-    peak_window_s = float(config.get("peak_window_s", 0.5))
-    peak_prominence = float(config.get("peak_prominence", 0.1))
-    accel_eps = float(config.get("reaccel_eps", 0.2))
-    accel_window_s = float(config.get("accel_window_s", 0.5))
-    brake_thresh = float(config.get("brake_thresh", 0.05))
-    brake_spike_thresh = float(config.get("brake_spike_thresh", 0.1))
-    turn_window_s = float(config.get("turn_window_s", 0.2))
-    min_dur_s = float(config.get("min_dur_s", 2.0))
-    max_dur_s = float(config.get("max_dur_s", 10.0))
-    stop_speed_th = float(config.get("stop_speed_th", 0.2))
+    smooth = cfg.smooth
+    steer_thresh = cfg.steer_thresh
+    straight_ratio_th = cfg.straight_ratio
+    min_peak_speed = cfg.min_peak_speed
+    peak_window_s = cfg.peak_window_s
+    peak_prominence = cfg.peak_prominence
+    accel_eps = cfg.reaccel_eps
+    accel_window_s = cfg.accel_window_s
+    brake_thresh = cfg.brake_thresh
+    brake_spike_thresh = cfg.brake_spike_thresh
+    turn_window_s = cfg.turn_window_s
+    min_dur_s = cfg.min_dur_s
+    max_dur_s = cfg.max_dur_s
+    stop_speed_th = cfg.stop_speed_th
 
     n = len(t)
     if n < 3:

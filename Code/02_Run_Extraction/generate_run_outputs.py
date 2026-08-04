@@ -2,16 +2,12 @@ import argparse
 from typing import Optional
 from pathlib import Path
 import os
-import sys
 
 import numpy as np
 import pandas as pd
 
-# Ensure repo root on sys.path for package imports
-sys.path.append(str(Path(__file__).resolve().parents[2]))
-
-from aero_validation.io import load_data, ensure_columns, ensure_global_plots_dir, repo_root
-from aero_validation.intervals import load_intervals_csv, load_intervals_txt
+from aero_validation.io import load_data, ensure_columns, data_path, ensure_global_plots_dir, repo_root
+from aero_validation.intervals import load_intervals_csv
 from aero_validation.plots import plot_overview, plot_run
 
 
@@ -35,27 +31,8 @@ parser.add_argument("--overview-out", type=Path, default=None, help="Overview pl
 parser.add_argument("--steer-thresh", type=float, default=14.0, help="Cap steering subplot scale to this threshold [deg]")
 args = parser.parse_args()
 
-def _resolve_default_input_csv(repo: Path) -> Path | None:
-    candidates = [
-        repo / "Outputs" / "01_Data_Preparation" / "Aero_Validation_Signals_cleaned_10ms.csv",
-        repo / "Outputs" / "01_Data_Preparation" / "Aero_Validation_Signals_cleaned.csv",
-        repo / "Outputs" / "01_Data_Preparation" / "Aero_Validation_Signals.csv",
-        repo / "Data" / "Aero_Validation_Signals_cleaned.csv",
-        repo / "Data" / "Aero_Validation_Signals.csv",
-    ]
-    for p in candidates:
-        if p.exists():
-            return p
-    return None
-
-
 repo = repo_root()
-csv_eff = Path(args.csv) if args.csv is not None else _resolve_default_input_csv(repo)
-if csv_eff is None or not Path(csv_eff).exists():
-    raise FileNotFoundError(
-        "No input CSV found. Provide --csv, or generate one via: "
-        "Code/01_Data_Preparation/build_cleaned_signals_10ms.py (writes Outputs/01_Data_Preparation/Aero_Validation_Signals_cleaned_10ms.csv)."
-    )
+csv_eff = Path(args.csv) if args.csv else data_path()
 df = load_data(csv_eff)
 ensure_columns(df, ["t_s", "GPS1_VEL_MAG_ms"])
 
@@ -108,11 +85,7 @@ runs_root = Path(args.outdir) if args.outdir else (repo / "Outputs" / "02_Run_Ex
 intervals_default_csv = repo / "Outputs" / "02_Run_Extraction" / "csv" / "drag_intervals.csv"
 
 if args.intervals:
-    ipath = Path(args.intervals)
-    if ipath.suffix.lower() == ".txt":
-        intervals, meta, run_ids = load_intervals_txt(ipath, max_len=len(t))
-    else:
-        intervals, meta, run_ids = load_intervals_csv(ipath)
+    intervals, meta, run_ids = load_intervals_csv(Path(args.intervals))
 else:
     intervals, meta, run_ids = load_intervals_csv(intervals_default_csv)
 

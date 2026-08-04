@@ -54,10 +54,14 @@ Thumbs.db
 *.lot
 *.bbl
 *.blg
+*.run.xml
+*.xdv
+
 
 # Project-specific generated/output directories
 Trash/
 Data/2025-10-22_17-44-15_Steißlingen_AeroValidation_Kibele/
-Outputs/01_Data_Preparation/Aero_Validation_Signals_cleaned_10ms.csv
-Outputs/01_Data_Preparation/Signals/
 Data/Stints/
+
+# All generated outputs (reproducible from source data + scripts)
+Outputs/

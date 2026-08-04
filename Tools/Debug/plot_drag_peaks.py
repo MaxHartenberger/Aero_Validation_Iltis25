@@ -1,9 +1,5 @@
 import argparse
 from pathlib import Path
-import sys
-
-# Ensure repo root on sys.path for package imports
-sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from aero_validation.io import load_data, ensure_columns
 from aero_validation.segmentation import detect_drag_peaks

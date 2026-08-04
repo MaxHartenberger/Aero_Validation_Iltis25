@@ -16,15 +16,10 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-import sys
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-
-
-# Ensure repo root on sys.path for package imports (aero_validation/*)
-sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 
 def list_channel_csvs(channels_dir: Path) -> List[Path]:

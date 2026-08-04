@@ -3,15 +3,11 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-import sys
 
 import numpy as np
 import pandas as pd
 
-
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-
-from common import (
+from aero_validation import (
     assign_config,
     fd_table_from_summary,
     load_constants,

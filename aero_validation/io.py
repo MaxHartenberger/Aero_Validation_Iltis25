@@ -14,6 +14,14 @@ import pandas as pd
 
 from .signals import sanitize_columns, add_derived_signals
 
+__all__ = [
+    "repo_root",
+    "data_path",
+    "ensure_global_plots_dir",
+    "load_data",
+    "ensure_columns",
+]
+
 
 def repo_root() -> Path:
     """Return the absolute path to the repository root.
@@ -35,32 +43,26 @@ def data_path() -> Path:
         repo / "Outputs" / "01_Data_Preparation" / "Aero_Validation_Signals_cleaned_10ms.csv",
         repo / "Outputs" / "01_Data_Preparation" / "Aero_Validation_Signals_cleaned.csv",
         repo / "Outputs" / "01_Data_Preparation" / "Aero_Validation_Signals.csv",
-        repo / "Data" / "Aero_Validation_Signals_cleaned.csv",
-        repo / "Data" / "Aero_Validation_Signals.csv",
     ]
     for p in candidates:
         if p.exists():
             return p
-    # Return the last candidate as a conventional default, even if missing.
-    return candidates[-1]
-
-
-def plots_dir() -> Path:
-    """Ensure and return the top-level Plots directory.
-
-    Creates the directory if it does not exist.
-    """
-    p = repo_root() / "Outputs" / "02_Run_Extraction" / "plots"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    raise FileNotFoundError(
+        "No input CSV found. Looked in:\n"
+        + "\n".join(f"  - {p}" for p in candidates)
+        + "\nGenerate the dataset with: "
+        "Code/01_Data_Preparation/build_cleaned_signals_10ms.py"
+    )
 
 
 def ensure_global_plots_dir() -> Path:
     """Ensure and return the top-level Plots directory.
 
-    Alias for `plots_dir()` used by scripts expecting this function.
+    Creates ``Outputs/02_Run_Extraction/plots/`` if it does not exist.
     """
-    return plots_dir()
+    p = repo_root() / "Outputs" / "02_Run_Extraction" / "plots"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 
 def load_data(csv_path: Path | None = None, encoding: str = "utf-8") -> pd.DataFrame:

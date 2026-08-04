@@ -12,6 +12,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
+__all__ = [
+    "plot_run",
+    "plot_overview",
+    "plot_peaks_overview",
+    "plot_overview_runs_subset",
+]
+
 
 def plot_run(
     t,

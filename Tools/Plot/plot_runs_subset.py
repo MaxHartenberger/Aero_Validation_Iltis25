@@ -6,12 +6,8 @@ Defaults: generates 1–12, 13–24, 25–36, 37–46 into Outputs/02_Run_Extrac
 """
 from pathlib import Path
 import argparse
-import sys
 
 import pandas as pd
-
-# Ensure repo root on sys.path for package imports
-sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from aero_validation.io import load_data
 from aero_validation.intervals import load_intervals_csv, parse_ranges

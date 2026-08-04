@@ -15,16 +15,11 @@ Outputs:
 
 import argparse
 from pathlib import Path
-import sys
 
 import numpy as np
 import pandas as pd
 
-# Ensure repo root on sys.path for aero_validation imports
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.append(str(ROOT))
-
-from aero_validation.io import load_data, repo_root  # type: ignore
+from aero_validation.io import load_data, data_path, repo_root
 from aero_validation.intervals import load_intervals_csv  # type: ignore
 from aero_validation.signals import add_derived_signals  # type: ignore
 
@@ -141,11 +136,7 @@ def main() -> None:
     args = parser.parse_args()
 
     repo = repo_root()
-    default_csv = repo / "Outputs" / "01_Data_Preparation" / "Aero_Validation_Signals_cleaned.csv"
-    fallback_csv = repo / "Data" / "Aero_Validation_Signals_cleaned.csv"
-    csv_path = args.csv if args.csv is not None else (default_csv if default_csv.exists() else (fallback_csv if fallback_csv.exists() else None))
-    if csv_path is None:
-        raise SystemExit("No input CSV provided and default cleaned CSV not found")
+    csv_path = args.csv if args.csv is not None else data_path()
 
     intervals_default = repo / "Outputs" / "02_Run_Extraction" / "csv" / "drag_intervals.csv"
     intervals_path = args.intervals if args.intervals is not None else intervals_default

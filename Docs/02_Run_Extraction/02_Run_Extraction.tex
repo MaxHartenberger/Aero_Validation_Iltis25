@@ -15,9 +15,26 @@
 \maketitle
 
 \section{Overview}
-This document describes the current straight-line interval detection used to extract coastdown runs.
-The implementation lives in \texttt{aero\_validation/segmentation.py} and is exposed through the CLI script
+This document describes the straight-line interval detection used to extract
+coastdown runs from the cleaned telemetry dataset.  The implementation lives in
+\texttt{aero\_validation/segmentation.py} and is invoked via the CLI script
 \texttt{Code/02\_Run\_Extraction/export\_drag\_runs.py}.
+
+\paragraph{Pipeline flow}
+\begin{center}
+\begin{verbatim}
+cleaned_10ms.csv  (from 01_Data_Preparation)
+    |
+    v
+export_drag_runs.py    -->  drag_intervals.csv  +  overview plot
+    |
+    v
+generate_run_outputs.py -->  run_XXX.csv  +  per-run QC plots
+    |
+    v
+downstream (drag calculation, 03_Drag_Calculation)
+\end{verbatim}
+\end{center}
 
 The algorithm:
 \begin{itemize}
@@ -27,8 +44,14 @@ The algorithm:
   \item writes an intervals CSV used by downstream steps.
 \end{itemize}
 
+\paragraph{Provenance.}
+The example outputs shown in this document are from the Stei\ss{}lingen
+aero-validation test day (2025-10-22), comprising 4 stints and 46 extracted
+coastdown runs.
+
 \section{Inputs}
-From the cleaned dataset CSV (typically \texttt{Outputs/01\_Data\_Preparation/Aero\_Validation\_Signals\_cleaned\_10ms.csv}):
+From the cleaned dataset CSV produced by the data-preparation pipeline
+(see \texttt{01\_Data\_Preparation.pdf}):
 \begin{itemize}
   \item \textbf{Time}: \texttt{t\_s} [s]
   \item \textbf{Speed}: \texttt{GPS1\_VEL\_MAG\_ms} [\si{\meter\per\second}]
@@ -36,13 +59,33 @@ From the cleaned dataset CSV (typically \texttt{Outputs/01\_Data\_Preparation/Ae
   \item \textbf{Optional brakes}: \texttt{ICU\_Brakpresf\_bar}, \texttt{ICU\_Brakpresr\_bar} [bar]
 \end{itemize}
 
+\section{Reproducibility}
+The following commands reproduce the run extraction from the cleaned dataset
+(run from the repository root):
+
+\begin{verbatim}
+# Detect coastdown intervals and write the intervals CSV
+python Code/02_Run_Extraction/export_drag_runs.py \
+    --csv Outputs/01_Data_Preparation/Aero_Validation_Signals_cleaned_10ms.csv \
+    --out Outputs/02_Run_Extraction/csv/drag_intervals.csv
+
+# Generate per-run time-series slices and QC plots
+python Code/02_Run_Extraction/generate_run_outputs.py \
+    --csv Outputs/01_Data_Preparation/Aero_Validation_Signals_cleaned_10ms.csv \
+    --intervals Outputs/02_Run_Extraction/csv/drag_intervals.csv \
+    --outdir Outputs/02_Run_Extraction/csv
+\end{verbatim}
+
+All thresholds can be overridden via CLI flags; see Section~\ref{sec:thresholds}
+for the canonical defaults.
+
 \section{Preprocessing}
 Let $t$ be the sample times and $v$ the speed signal.
 \begin{itemize}
   \item Estimate the median sample period $\Delta t_\mathrm{med}$ from $\Delta t = \mathrm{diff}(t)$.
   \item Convert time windows (seconds) to sample windows by $n \approx \mathrm{round}(\Delta t_\mathrm{window}/\Delta t_\mathrm{med})$.
   \item If smoothing is enabled (default): smooth $v$ with a centered rolling mean using a window derived from \texttt{peak\_window\_s}.
-  \item If brake signals exist: combine $b(t)=\max(b_f,b_r)$ and lightly smooth it with a centered rolling mean (fixed small window).
+  \item If brake signals exist: combine $b(t)=\max(b_f,b_r)$ and lightly smooth with a centered rolling mean of 5 samples.
 \end{itemize}
 
 \section{Candidate peak detection}
@@ -54,7 +97,8 @@ It combines two mechanisms and returns sorted unique indices:
 \end{enumerate}
 
 \paragraph{Prominence gate}
-For each local maximum, compute a prominence proxy
+For each local maximum, compute a prominence proxy using the 60th percentile of
+the speed within a local window around the candidate:
 \[
   p = v_s[i] - P_{60}(\,v_s\;\text{in a local window around }i\,),
 \]
@@ -82,9 +126,25 @@ After computing $(p,e)$:
   \item \textbf{Non-overlap}: candidate peaks that would overlap a previously accepted interval are skipped.
 \end{itemize}
 
+\section{Error handling \& robustness}
+\begin{itemize}
+  \item \textbf{No peaks found}: if no speed peaks satisfy the prominence and
+        minimum-speed gates, an empty intervals CSV is produced (no crash).
+  \item \textbf{Missing steering}: if \texttt{ICU\_SteeringAngle\_deg} is absent,
+        the straightness gate is skipped and all runs are accepted on duration
+        alone.  A warning should be raised in this case.
+  \item \textbf{Missing brakes}: if brake pressure channels are absent, the
+        braking end-condition is simply not evaluated; runs terminate only on
+        stop, turn, or re-acceleration.
+  \item \textbf{Short dataset}: if fewer than 3 samples exist, segmentation
+        returns an empty list immediately.
+\end{itemize}
+
 \section{CLI usage and outputs}
 \subsection*{Export intervals}
-\texttt{Code/02\_Run\_Extraction/export\_drag\_runs.py} loads the cleaned dataset, runs segmentation, writes an intervals CSV, and generates an overview plot.
+\texttt{Code/02\_Run\_Extraction/export\_drag\_runs.py} loads the cleaned
+dataset, runs segmentation, writes an intervals CSV, and generates an overview
+plot.
 
 Default output paths:
 \begin{itemize}
@@ -94,7 +154,7 @@ Default output paths:
 
 \begin{figure}[ht]
   \centering
-  \includegraphics[width=\linewidth]{../Outputs/02_Run_Extraction/plots/velocity_overview_with_runs.png}
+  \includegraphics[width=\linewidth]{../../Outputs/02_Run_Extraction/plots/velocity_overview_with_runs.png}
   \caption{Overview of detected coastdown intervals overlaid on the speed trace (generated by \texttt{export\_drag\_runs.py}).}
 \end{figure}
 
@@ -108,10 +168,33 @@ Intervals CSV schema (key fields):
 \end{itemize}
 
 \subsection*{Optional debug log}
-If \texttt{--debug-out} is provided, the debug variant \texttt{segment\_drag\_runs\_with\_debug} writes a per-peak decision log (accepted/rejected + reasons).
+If \texttt{--debug-out} is provided, \texttt{segment\_drag\_runs\_with\_debug}
+writes a per-peak decision log with the following columns:
+\begin{center}
+\begin{tabular}{ll}
+\texttt{peak\_idx}     & Index of the candidate peak \\
+\texttt{t\_peak}       & Time at the peak [s] \\
+\texttt{accepted}      & Boolean: did this peak yield a valid run? \\
+\texttt{reason}        & Rejection reason if not accepted
+                         (\texttt{overlap}, \texttt{duration}, \texttt{straight}) \\
+\texttt{start\_idx}    & Start index of the accepted interval \\
+\texttt{end\_idx}      & End index (exclusive) \\
+\texttt{t0}, \texttt{t1} & Start and end times [s] \\
+\texttt{duration}      & Run duration [s] \\
+\texttt{steer\_ratio}  & Fraction of samples within steering threshold \\
+\texttt{end\_reason}   & What ended the run
+                         (\texttt{stop}, \texttt{turn}, \texttt{brake},
+                          \texttt{brake\_spike}, \texttt{reaccel}) \\
+\end{tabular}
+\end{center}
 
-\section{Default thresholds (CLI defaults)}
-The defaults below are the ones exposed by \texttt{export\_drag\_runs.py}:
+\section{Default thresholds}
+\label{sec:thresholds}
+The canonical defaults are defined in the \texttt{DragRunConfig} dataclass
+(\texttt{aero\_validation/segmentation.py}) and can be overridden individually
+via CLI flags or programmatically by passing a custom instance.
+
+The defaults exposed by \texttt{export\_drag\_runs.py} are:
 \begin{center}
 \begin{tabular}{ll}
 \texttt{steer\_thresh} & 10 deg \\
@@ -131,7 +214,8 @@ The defaults below are the ones exposed by \texttt{export\_drag\_runs.py}:
 \end{center}
 
 \section{Per-run outputs}
-The script \texttt{Code/02\_Run\_Extraction/generate\_run\_outputs.py} consumes \texttt{drag\_intervals.csv} and writes:
+The script \texttt{Code/02\_Run\_Extraction/generate\_run\_outputs.py} consumes
+\texttt{drag\_intervals.csv} and writes:
 \begin{itemize}
   \item \texttt{Outputs/02\_Run\_Extraction/csv/run\_\{XXX\}.csv}: sliced time series per interval
   \item \texttt{Outputs/02\_Run\_Extraction/plots/run\_\{XXX\}\_velocity\_steering\_brake.png}: QC plots per run
@@ -139,8 +223,11 @@ The script \texttt{Code/02\_Run\_Extraction/generate\_run\_outputs.py} consumes 
 
 \begin{figure}[ht]
   \centering
-  \includegraphics[width=\linewidth]{../Outputs/02_Run_Extraction/plots/run_001_velocity_steering_brake.png}
+  \includegraphics[width=\linewidth]{../../Outputs/02_Run_Extraction/plots/run_001_velocity_steering_brake.png}
   \caption{Example per-run QC plot (speed, steering, and brake traces) for Run~001.}
 \end{figure}
+
+The intervals CSV produced here is the input for the drag coefficient
+estimation step (see \texttt{03\_Drag\_Calculation.pdf}).
 
 \end{document}

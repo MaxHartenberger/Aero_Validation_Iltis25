@@ -98,10 +98,6 @@ def main() -> int:
             name="baseline",
             input_csv=Path("Outputs/03_Drag_Calculation/Approach1_PerRun/csv/drag_coefficients.csv"),
         ),
-        ModelSpec(
-            name="linear",
-            input_csv=Path("Outputs/03_Drag_Calculation/Approach4_PerRun_Linear/csv/drag_coefficients.csv"),
-        ),
     ]
 
     out_root: Path = args.outputs_root
